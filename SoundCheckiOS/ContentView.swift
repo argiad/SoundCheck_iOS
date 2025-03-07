@@ -8,6 +8,7 @@
 import SwiftUI
 import AVFoundation
 import UIKit
+import SwiftData
 
 // MARK: - AudioHelperDelegate Protocol
 protocol AudioHelperDelegate {
@@ -41,9 +42,9 @@ class AudioHelper: NSObject, ObservableObject {
         super.init()
     }
     
-    var delegate: AudioHelperDelegate?
+    var delegate: AudioHelperDelegate? = nil
     
-    private var audioSession: AVAudioSession?
+    private var audioSession: AVAudioSession? = nil
     private let captureSession = AVCaptureSession()
     private var playerNode = AVAudioPlayerNode()
     private var engine = AVAudioEngine()
@@ -54,6 +55,9 @@ class AudioHelper: NSObject, ObservableObject {
     
     private var outputStream: OutputStream?
     private var task: URLSessionUploadTask?
+    
+    private var dataSession: URLSession?
+    var activeTask: URLSessionTask? = nil
     
     // MARK: - Audio Session Configuration
     private func initSession() throws {
@@ -76,11 +80,16 @@ class AudioHelper: NSObject, ObservableObject {
         
         engine = AVAudioEngine()
         playerNode = AVAudioPlayerNode()
+        
         let outputNode = engine.outputNode
+        let targetFormat = outputNode.outputFormat(forBus: 0)
         let outputFormat = outputNode.outputFormat(forBus: 0)
+        print("Output Format: \(outputFormat)")
+        print("Target Format: \(targetFormat)")
         
         engine.attach(playerNode)
-        engine.connect(playerNode, to: outputNode, format: outputFormat)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: targetFormat)
+        engine.connect(engine.mainMixerNode, to: outputNode, format: targetFormat)
         
         do {
             try engine.start()
@@ -88,29 +97,133 @@ class AudioHelper: NSObject, ObservableObject {
             print("Playback started")
         } catch {
             print("Audio engine start error: \(error.localizedDescription)")
+            stopPlayback()
         }
     }
     
     func pushPlayerChunk(_ chunk: Data) {
-        guard let buffer = dataToAudioBuffer(data: chunk) else { return }
+        guard !chunk.isEmpty, let buffer = dataToAudioBuffer(data: chunk) else {
+            print("Invalid or empty chunk, skipping")
+            return
+        }
+        
+        guard engine.isRunning else {
+            print("Audio engine not running, skipping chunk")
+            return
+        }
+        
+        let outputFormat = engine.outputNode.outputFormat(forBus: 0)
         buffersCounter += 1
-        playerNode.scheduleBuffer(buffer, completionCallbackType: .dataConsumed) { [weak self] _ in
+        
+        DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.buffersCounter -= 1
-            if self.buffersCounter == 0 {
-                DispatchQueue.main.async {
-                    self.stopPlayback()
-                    self.delegate?.playbackDone()
+            print("Scheduling buffer with \(buffer.frameLength) frames")
+            
+            if buffer.format != outputFormat {
+                guard let convertedBuffer = self.convertBuffer(buffer, to: outputFormat) else {
+                    print("Failed to convert buffer format")
+                    self.buffersCounter -= 1
+                    return
+                }
+                self.playerNode.scheduleBuffer(convertedBuffer, completionCallbackType: .dataConsumed) { [weak self] _ in
+                    self?.handleBufferCompletion()
+                }
+            } else {
+                self.playerNode.scheduleBuffer(buffer, completionCallbackType: .dataConsumed) { [weak self] _ in
+                    self?.handleBufferCompletion()
                 }
             }
         }
     }
     
+    private func handleBufferCompletion() {
+        buffersCounter -= 1
+        print("Buffer completed, remaining: \(buffersCounter)")
+        if buffersCounter <= 0 {
+            DispatchQueue.main.async { [weak self] in
+                self?.stopPlayback()
+            }
+        }
+    }
+    
+    // Преобразование с AVAudioConverter
+    private func convertBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        guard let converter = AVAudioConverter(from: buffer.format, to: format) else {
+            print("Ошибка создания конвертера формата")
+            return nil
+        }
+        
+        // Создаем новый буфер с нужным форматом
+        guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameCapacity) else {
+            print("Ошибка создания буфера для конвертации")
+            return nil
+        }
+        
+        var error: NSError?
+        let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        
+        // Конвертация
+        let status = converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
+        
+        if let error = error {
+            print("Ошибка преобразования формата: \(error.localizedDescription)")
+            return nil
+        }
+        
+        if status == .haveData {
+            return convertedBuffer
+        } else {
+            print("Конвертер не вернул данные: статус - \(status.rawValue)")
+            return nil
+        }
+    }
+    
+    // Download and Play Audio
+    func downloadAndPlayAudio(serverUrl: String, authToken: String) {
+        guard let url = URL(string: serverUrl) else {
+            print("Invalid URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.setValue("chunked", forHTTPHeaderField: "Transfer-Encoding")
+        request.setValue("no-cache", forHTTPHeaderField: "Cahe-Control")
+        
+        let configuration = URLSessionConfiguration.default
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        
+        dataSession = URLSession(configuration: configuration, delegate: self, delegateQueue: OperationQueue.main)
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.beginPlayback()
+        }
+        
+        dataSession?.dataTask(with: request).resume()
+    }
+    
     func stopPlayback() {
-        playerNode.stop()
-        engine.stop()
-        buffersCounter = 0
-        print("Playback stopped")
+        print("******** STOP *********")
+        if audioSession != nil && playerNode.isPlaying {
+            playerNode.stop()
+            engine.detach(playerNode)
+            if engine.isRunning {
+                engine.stop()
+            }
+            engine = AVAudioEngine()
+            playerNode = AVAudioPlayerNode()
+            buffersCounter = 0
+        }
+        activeTask?.cancel()
+        activeTask = nil
+        dataSession?.finishTasksAndInvalidate()
+        dataSession = nil
+        delegate?.playbackDone()
     }
     
     // MARK: - Recording Logic
@@ -136,12 +249,10 @@ class AudioHelper: NSObject, ObservableObject {
                 print("Failed to configure recording session: \(error.localizedDescription)")
             }
             
-            
             captureSession.commitConfiguration()
             captureSession.startRunning()
             print("Recording and streaming started")
             setupStreaming(serverUrl: serverUrl, authToken: authToken)
-
         }
     }
     
@@ -150,8 +261,11 @@ class AudioHelper: NSObject, ObservableObject {
             captureSession.stopRunning()
         }
         outputStream?.close()
+        outputStream = nil
         task?.cancel()
+        task = nil
         try? audioSession?.setActive(false)
+        audioSession = nil
         print("Recording and streaming stopped")
     }
     
@@ -163,7 +277,7 @@ class AudioHelper: NSObject, ObservableObject {
         }
 
         var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.setValue("chunked", forHTTPHeaderField: "Transfer-Encoding")
@@ -186,13 +300,33 @@ class AudioHelper: NSObject, ObservableObject {
     
     // MARK: - Audio Data Conversions
     private func dataToAudioBuffer(data: Data) -> AVAudioPCMBuffer? {
-        let frameCapacity = UInt32(data.count) / 2
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: playFormat, frameCapacity: frameCapacity) else { return nil }
-        buffer.frameLength = frameCapacity
-        data.withUnsafeBytes { rawBufferPointer in
-            memcpy(buffer.int16ChannelData![0], rawBufferPointer.baseAddress!, data.count)
+        guard !data.isEmpty else {
+            print("Empty data received, cannot create buffer")
+            return nil
         }
-        return buffer
+        
+        let frameCapacity = UInt32(data.count) / 2 // 2 bytes per Int16 sample
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: playFormat, frameCapacity: frameCapacity),
+              let channelData = buffer.int16ChannelData else {
+            print("Failed to allocate buffer or access channel data")
+            return nil
+        }
+        
+        guard data.count % 2 == 0 else {
+            print("Data size \(data.count) is not aligned for PCM Int16 (must be even)")
+            return nil
+        }
+        
+        buffer.frameLength = frameCapacity
+        return data.withUnsafeBytes { rawBufferPointer in
+            guard let baseAddress = rawBufferPointer.baseAddress else {
+                print("No base address for data")
+                return nil
+            }
+            
+            memcpy(channelData[0], baseAddress, data.count)
+            return buffer
+        }
     }
     
     private func audioBufferToData(audioBuffer: AVAudioPCMBuffer) -> Data {
@@ -261,15 +395,44 @@ extension AudioHelper: AVCaptureAudioDataOutputSampleBufferDelegate {
 
         return convertedBuffer
     }
+}
+
+// MARK: - URLSessionDataDelegate
+extension AudioHelper: URLSessionDataDelegate {
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            print("Invalid response from server: \(String(describing: (response as? HTTPURLResponse)?.statusCode))")
+            completionHandler(.cancel)
+            return
+        }
+        print("Valid response received: \(httpResponse.statusCode)")
+        completionHandler(.allow)
+    }
     
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        print("Received audio chunk of size: \(data.count) bytes")
+        pushPlayerChunk(data)
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error {
+            print("Streaming error: \(error.localizedDescription)")
+        } else {
+            print("Streaming completed")
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.stopPlayback()
+            self?.delegate?.playbackDone()
+        }
+    }
 }
 
 // MARK: - SwiftUI ContentView
 struct ContentView: View {
     @StateObject private var audioHelper = AudioHelper.sharedInstance
-    @State private var broadcastID = "01JBBBJT4SS9K04K3B7X8JG4TE"
-    @State private var serverUrl = "http://192.168.1.22:9080/broadcast"
-    @State private var authToken = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJ1c2VySWQiOiIwMUpBUFlUVEtSRE44Qjc3M1k4NlM3VFBKQiIsInVzZXJuYW1lIjoibWUiLCJleHAiOjE3MzI1OTgzOTR9.huyw_4ShokmG2Xbjc8hV8TkkLm4taF9v5WcPgpCdjOSRBKqmM2Bx1YpBt6PbklBd0r3SZ26VJ1yNgtnDZH-tgQ"
+    @State private var broadcastID = "01JMMZZNT29ZXWRR2F2DRF9T5R"
+    @State private var serverUrl = "https://ptt.steegler.com/broadcast"
+    @State private var authToken = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJ1c2VySWQiOiIwMUpNTVpDOEZYRzBLOU4wUzZWS1AyQkFOUSIsInVzZXJuYW1lIjoiTWF4IiwiZXhwIjoxNzQwMjAyMTYzfQ.HCJgYC8ipLcd1EDe8EelfdJKlD5BiAfGUW0CMlnP3wP6bIBAvJw-ySK0m_Rv5xD5Upm0auNe_GiZoaaPc5tIag"
     @State private var isStreaming = false
     @State private var isPlaying = false
     
@@ -291,20 +454,24 @@ struct ContentView: View {
             Button(isStreaming ? "Stop Streaming" : "Start Streaming") {
                 if isStreaming {
                     audioHelper.stopRecording()
+                    isStreaming = false
                 } else {
                     audioHelper.beginRecording(serverUrl: "\(serverUrl)/\(broadcastID)", authToken: authToken)
+                    isStreaming = true
                 }
-                isStreaming.toggle()
+                //isStreaming.toggle()
             }
             .buttonStyle(.borderedProminent)
             
             Button(isPlaying ? "Stop Playback" : "Start Playback") {
                 if isPlaying {
                     audioHelper.stopPlayback()
+                    isPlaying = false
                 } else {
-                    audioHelper.beginPlayback()
+                    audioHelper.downloadAndPlayAudio(serverUrl: "\(serverUrl)/\(broadcastID)", authToken: authToken)
+                    isPlaying = true
                 }
-                isPlaying.toggle()
+                //isPlaying.toggle()
             }
             .buttonStyle(.borderedProminent)
         }
@@ -323,6 +490,7 @@ extension ContentView: AudioHelperDelegate {
     }
     
     func playbackDone() {
+        isPlaying = false
         print("Playback finished")
     }
 }
@@ -343,4 +511,28 @@ extension AudioHelper: URLSessionTaskDelegate {
         Stream.getBoundStreams(withBufferSize: 4096, inputStream: &inputStream, outputStream: &outputStream)
         return (inputStream!, outputStream!)
     }
+    
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        activeTask = task
+    }
+}
+
+#Preview {
+    ContentView()
+        .modelContainer(PreviewContainer.container)
+}
+
+struct PreviewContainer {
+    static var container: ModelContainer = {
+        let schema = Schema([Item.self])
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        
+        do {
+            let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            // Add any sample data here if needed
+            return container
+        } catch {
+            fatalError("Could not create preview container: \(error)")
+        }
+    }()
 }

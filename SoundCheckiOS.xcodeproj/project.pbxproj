@@ -15,6 +15,7 @@
 		38CF221C2CE521E900C4593E /* SoundCheckiOSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38CF221B2CE521E900C4593E /* SoundCheckiOSTests.swift */; };
 		38CF22262CE521E900C4593E /* SoundCheckiOSUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38CF22252CE521E900C4593E /* SoundCheckiOSUITests.swift */; };
 		38CF22282CE521E900C4593E /* SoundCheckiOSUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38CF22272CE521E900C4593E /* SoundCheckiOSUITestsLaunchTests.swift */; };
+		C2E51B002D6E169B008FFA7F /* InfoHelper in Resources */ = {isa = PBXBuildFile; fileRef = C2E51AFF2D6E169B008FFA7F /* InfoHelper */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,6 +48,7 @@
 		38CF22252CE521E900C4593E /* SoundCheckiOSUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundCheckiOSUITests.swift; sourceTree = "<group>"; };
 		38CF22272CE521E900C4593E /* SoundCheckiOSUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundCheckiOSUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		38CF22362CE5258000C4593E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		C2E51AFF2D6E169B008FFA7F /* InfoHelper */ = {isa = PBXFileReference; lastKnownFileType = text; path = InfoHelper; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +79,7 @@
 		38CF21FC2CE521E700C4593E = {
 			isa = PBXGroup;
 			children = (
+				C2E51AFF2D6E169B008FFA7F /* InfoHelper */,
 				38CF22072CE521E700C4593E /* SoundCheckiOS */,
 				38CF221A2CE521E900C4593E /* SoundCheckiOSTests */,
 				38CF22242CE521E900C4593E /* SoundCheckiOSUITests */,
@@ -238,6 +241,7 @@
 			files = (
 				38CF22122CE521E900C4593E /* Preview Assets.xcassets in Resources */,
 				38CF220F2CE521E900C4593E /* Assets.xcassets in Resources */,
+				C2E51B002D6E169B008FFA7F /* InfoHelper in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -428,7 +432,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"SoundCheckiOS/Preview Content\"";
-				DEVELOPMENT_TEAM = G4FX5726HD;
+				DEVELOPMENT_TEAM = 2XVU2XVT3B;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SoundCheckiOS/Info.plist;
@@ -459,7 +463,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"SoundCheckiOS/Preview Content\"";
-				DEVELOPMENT_TEAM = G4FX5726HD;
+				DEVELOPMENT_TEAM = 2XVU2XVT3B;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SoundCheckiOS/Info.plist;

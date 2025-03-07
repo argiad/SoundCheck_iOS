@@ -1,0 +1,85 @@
+
+First part:
+
+func connection(_ connection: NSURLConnection, willCacheResponse cachedResponse: CachedURLResponse) -> CachedURLResponse? {
+        return nil
+    }
+    
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        printLog(session)
+        printLog(task)
+        activeTask = task
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+//        printLog("bytes Sent \(bytesSent)")
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, needNewBodyStream completionHandler: @escaping (InputStream?) -> Void) {
+        printLog(task)
+        guard let boundStreams = self.boundStreams else { task.cancel(); return }
+        completionHandler(boundStreams.input)
+    }
+    
+    func urlSession(_ session: URLSession, streamTask: URLSessionStreamTask, didBecome inputStream: InputStream, outputStream: OutputStream) {
+        printLog(">>>>>> didBecome inputStream")
+    }
+    
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        if (200..<300 ~= ((dataTask.response as? HTTPURLResponse)?.statusCode ?? -1) ){
+            switch (dataTask.state) {
+            case URLSessionTask.State.running:
+                delegate?.didReceive(data)
+            case URLSessionTask.State.completed:
+                activeTask = nil
+                printLog("Session Compleated")
+            case URLSessionTask.State.canceling:
+                activeTask = nil
+                printLog("^^^^^ SESSION CANCELED ^^^^^^^")
+            default:
+                break
+            }
+        } else {
+            printLog(String(describing: dataTask.response))
+            
+        }
+    }
+    
+    // TODO: HANDLE AN ERROR
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        //        printLog("\n *********** RESPONSE ***********\n\( task.response),\n *********** ERROR ***********\n \(task.error)")
+        let streamID = task.originalRequest?.url?.lastPathComponent ?? "unknown"
+        //        printLog(streamID)
+        let result: Result<Any, Error> = (task.error != nil) ?
+        Result.failure(PTTClientError.streamRequestError(messageID: streamID, errorText: task.error!.localizedDescription)) :
+        Result.success(streamID)
+        delegate?.streamEnded(result: result)
+    }
+    
+    
+    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        printLog(">>>>>> forBackgroundURLSession")
+    }
+
+
+Second part:
+
+func readStream(streamID: String) { //, completion: @escaping (Result<Any, Error>) -> Void ){
+        let url = URLProvider.Endpoint.Broadcast.provideURL(with: streamID)
+        printLog(">>>>>> u \(url.absoluteString )")
+        guard var request = try? network.createRequest(method: .get, url: url, headers: [:], body: nil, completion: { [weak self] e in
+            printLog(e.localizedDescription);
+            self?.delegate?.escalateError(e)
+        } ) else {
+            return
+        }
+        
+        request.set(headerFields: authHeader)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.allowsCellularAccess = true
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        
+        let mainQueue = OperationQueue.main
+        URLSession(configuration: configuration, delegate: self, delegateQueue: mainQueue).dataTask(with: request).resume()
+    }
