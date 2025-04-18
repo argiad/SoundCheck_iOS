@@ -9,6 +9,8 @@ import SwiftUI
 import AVFoundation
 import UIKit
 import SwiftData
+import Opus
+import Combine
 
 // MARK: - AudioHelperDelegate Protocol
 protocol AudioHelperDelegate {
@@ -28,18 +30,56 @@ class AudioHelper: NSObject, ObservableObject {
     private let captureSession = AVCaptureSession()
     private var playerNode = AVAudioPlayerNode()
     private var engine = AVAudioEngine()
-    private var buffersCounter = 0
+    var buffersCounter = 0
     private var isPlaybackActive = false
     
-    private let recordingFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 44100, channels: 1, interleaved: false)!
-    private let playFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 44100, channels: 1, interleaved: false)!
+    private let recordingFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48000, channels: 1, interleaved: false)!
+    private let playFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48000, channels: 1, interleaved: false)!
     
-    private var outputStream: OutputStream?
-    private var task: URLSessionUploadTask?
+    var outputStream: OutputStream?
+    var inputStream: InputStream?
+    var task: URLSessionUploadTask?
     
     private var dataSession: URLSession?
     var activeTask: URLSessionTask? = nil
     
+    
+    // MARK: - Opus updates
+    enum CodecMode: String, CaseIterable {
+        case rawPCM
+        case opus
+    }
+    @Published var codecMode: CodecMode = .opus  // Default to RAW PCM
+ 
+    var audioEngine: AVAudioEngine!
+    var inputNode: AVAudioInputNode!
+    var opusPlayerNode = AVAudioPlayerNode()
+    var opusSession: AVAudioSession!
+    var encoder: Opus.Encoder?
+    var decoder: Opus.Decoder?
+    var outPipe: DataPipe! = DataPipe()
+    var inPipe: DataPipe! = DataPipe()
+    
+    let OPUS_ENCODER_SAMPLE_RATE: Double = 48000
+    let OPUS_ENCODER_DURATION_MS: Int = 50
+    let AUDIO_OUTPUT_SAMPLE_RATE: Double = 48000
+    let AUDIO_OUTPUT_CHANNELS: AVAudioChannelCount = 1
+    
+    var opusOutputStream: OutputStream?
+    var opusInputStream: InputStream?
+    
+    var opusBufferData: [Data] = []
+    
+    var readQueue: DispatchQueue = DispatchQueue(label: "audio.read.queue", qos: .userInitiated)
+    
+    let streamSubject = PassthroughSubject<Data, Never>()
+    let readBufferSize = 8192
+    var cancellable: AnyCancellable?
+    let marker: [UInt8] = [0x7B, 0x85] // Opus Packet Start Header
+    var opusBuffer = Data() // Buffer for accumulating data
+    var collecting = false // Track if we're collecting a packet
+    
+    // MARK: - INIT
     
     private override init() {
         super.init()
@@ -49,6 +89,9 @@ class AudioHelper: NSObject, ObservableObject {
     private func initSession() throws {
         audioSession = AVAudioSession.sharedInstance()
         try audioSession?.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+        try audioSession?.setPreferredSampleRate(48000.0) // Force 48kHz
+        try audioSession?.setPreferredInputNumberOfChannels(1)
+        try audioSession?.setPreferredOutputNumberOfChannels(1)
         try audioSession?.setActive(true)
     }
     
@@ -62,25 +105,38 @@ class AudioHelper: NSObject, ObservableObject {
     
     // MARK: - Playback Logic
     func beginPlayback(serverUrl: String, authToken: String, broadcastID: String) {
-        configureSession()
+        if codecMode == .opus {
+            setupPlayback()
+            
+            opusPlayerNode.play()
+            setupReceivingStream()
+            readOpusPacketsFromStream()
+            
+        } else {
+            
+            configureSession()
+            
+            engine = AVAudioEngine()
+            playerNode = AVAudioPlayerNode()
+            
+            
+            let outputNode = engine.outputNode
+            let targetFormat = outputNode.outputFormat(forBus: 0)
+            
+            engine.attach(playerNode)
+            engine.connect(playerNode, to: engine.mainMixerNode, format: targetFormat)
+            engine.connect(engine.mainMixerNode, to: outputNode, format: targetFormat)
+        }
         
-        engine = AVAudioEngine()
-        playerNode = AVAudioPlayerNode()
         isPlaybackActive = true
         buffersCounter = 0
         
-        let outputNode = engine.outputNode
-        let targetFormat = outputNode.outputFormat(forBus: 0)
-        
-        engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: targetFormat)
-        engine.connect(engine.mainMixerNode, to: outputNode, format: targetFormat)
-        
         do {
-            try engine.start()
-            playerNode.play()
-            print("Playback started")
-            
+            if codecMode == .rawPCM {
+                try engine.start()
+                playerNode.play()
+                print("Raw Playback started")
+            }
             // Start downloading audio data
             downloadAndPlayAudio(serverUrl: "\(serverUrl)/\(broadcastID)", authToken: authToken)
             
@@ -104,7 +160,38 @@ class AudioHelper: NSObject, ObservableObject {
             print("Failed to create audio buffer from chunk")
             return
         }
+        originalPlayer(buffer: buffer)
         
+//        guard engine.isRunning else {
+//            print("Audio engine not running, skipping chunk")
+//            return
+//        }
+//        
+//        let outputFormat = engine.outputNode.outputFormat(forBus: 0)
+//        buffersCounter += 1
+//        print("Adding buffer #\(buffersCounter) with \(buffer.frameLength) frames")
+//        
+//        DispatchQueue.main.async { [weak self] in
+//            guard let self = self else { return }
+//            
+//            if buffer.format != outputFormat {
+//                guard let convertedBuffer = self.convertBuffer(buffer, to: outputFormat) else {
+//                    print("Failed to convert buffer format")
+//                    self.buffersCounter -= 1
+//                    return
+//                }
+//                self.playerNode.scheduleBuffer(convertedBuffer, completionCallbackType: .dataConsumed) { [weak self] _ in
+//                    self?.handleBufferCompletion()
+//                }
+//            } else {
+//                self.playerNode.scheduleBuffer(buffer, completionCallbackType: .dataConsumed) { [weak self] _ in
+//                    self?.handleBufferCompletion()
+//                }
+//            }
+//        }
+    }
+    
+    func originalPlayer(buffer: AVAudioPCMBuffer) {
         guard engine.isRunning else {
             print("Audio engine not running, skipping chunk")
             return
@@ -134,7 +221,7 @@ class AudioHelper: NSObject, ObservableObject {
         }
     }
     
-    private func handleBufferCompletion() {
+    func handleBufferCompletion() {
         buffersCounter -= 1
         print("Buffer completed. Remaining: \(buffersCounter)")
         
@@ -147,7 +234,7 @@ class AudioHelper: NSObject, ObservableObject {
     }
     
     // Преобразование с AVAudioConverter
-    private func convertBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) -> AVAudioPCMBuffer? {
+    func convertBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) -> AVAudioPCMBuffer? {
         guard let converter = AVAudioConverter(from: buffer.format, to: format) else {
             print("Ошибка создания конвертера формата")
             return nil
@@ -207,32 +294,49 @@ class AudioHelper: NSObject, ObservableObject {
         print("Stopping playback")
         isPlaybackActive = false
         
-        if playerNode.isPlaying {
-            playerNode.stop()
-            
-            if playerNode.engine == engine {
-                engine.detach(playerNode)
+        if codecMode == .rawPCM {
+            if playerNode.isPlaying {
+                playerNode.stop()
+                
+                if playerNode.engine == engine {
+                    engine.detach(playerNode)
+                }
+                
+                if engine.isRunning {
+                    engine.stop()
+                }
+                
+                engine = AVAudioEngine()
+                playerNode = AVAudioPlayerNode()
+
             }
-            
-            if engine.isRunning {
-                engine.stop()
-            }
-            
-            engine = AVAudioEngine()
-            playerNode = AVAudioPlayerNode()
-            buffersCounter = 0
-            
-            activeTask?.cancel()
-            activeTask = nil
-            
-            // Clean up the session
-            dataSession?.finishTasksAndInvalidate()
-            dataSession = nil
+        } else if codecMode == .opus {
+            stopOpusPlayback()
         }
+        
+        buffersCounter = 0
+        
+        activeTask?.cancel()
+        activeTask = nil
+        
+        // Clean up the session
+        dataSession?.finishTasksAndInvalidate()
+        dataSession = nil
     }
     
     // MARK: - Recording Logic
     func beginRecording(serverUrl: String, authToken: String, broadcastID: String) {
+        // Start streaming to server
+        
+        
+        if codecMode == .opus {
+            setupRecording()
+            startOpusRecording(serverUrl: "\(serverUrl)/\(broadcastID)", authToken: authToken)
+            return
+        }
+        
+        
+        
         guard let audioDevice = AVCaptureDevice.default(for: .audio) else { return }
         configureSession()
         
@@ -240,12 +344,13 @@ class AudioHelper: NSObject, ObservableObject {
             guard let self = self else { return }
             
             self.captureSession.beginConfiguration()
+            self.captureSession.automaticallyConfiguresApplicationAudioSession = false
             
             do {
                 let audioInput = try AVCaptureDeviceInput(device: audioDevice)
                 let audioOutput = AVCaptureAudioDataOutput()
                 audioOutput.setSampleBufferDelegate(self, queue: DispatchQueue.global(qos: .userInteractive))
-                
+
                 if captureSession.canAddInput(audioInput) {
                     captureSession.addInput(audioInput)
                 }
@@ -260,7 +365,7 @@ class AudioHelper: NSObject, ObservableObject {
             self.captureSession.startRunning()
             print("Recording and streaming started")
             
-            // Start streaming to server
+//            // Start streaming to server
             self.setupStreaming(serverUrl: "\(serverUrl)/\(broadcastID)", authToken: authToken)
             
             // Notify delegate
@@ -271,6 +376,12 @@ class AudioHelper: NSObject, ObservableObject {
     }
     
     func stopRecording() {
+        if codecMode == .opus {
+            stopOpusRecording()
+            return
+        }
+        
+        
         if captureSession.isRunning {
             captureSession.stopRunning()
         }
@@ -314,7 +425,7 @@ class AudioHelper: NSObject, ObservableObject {
         }
     }
     
-    private func sendAudioData(_ data: Data) {
+    func sendAudioData(_ data: Data) {
         guard let outputStream = outputStream, outputStream.hasSpaceAvailable else {
             print("OutputStream not ready or no space available")
             return
@@ -332,8 +443,26 @@ class AudioHelper: NSObject, ObservableObject {
         }
     }
     
+    func sendDataToOpus(_ data: Data) {
+        guard let outputStream = opusOutputStream, outputStream.hasSpaceAvailable else {
+            print("OutputStream not ready or no space available")
+            return
+        }
+        
+        data.withUnsafeBytes { bufferPointer in
+            guard let baseAddress = bufferPointer.baseAddress else { return }
+            let bytes = baseAddress.assumingMemoryBound(to: UInt8.self)
+            let written = outputStream.write(bytes, maxLength: data.count)
+            if written < 0 {
+                print("OutputStream write error")
+            } else {
+                print("sendDataToOpus > Sent \(written) bytes")
+            }
+        }
+    }
+    
     // MARK: - Audio Data Conversions
-    private func dataToAudioBuffer(data: Data) -> AVAudioPCMBuffer? {
+    func dataToAudioBuffer(data: Data) -> AVAudioPCMBuffer? {
         guard !data.isEmpty else {
             print("Empty data received, cannot create buffer")
             return nil
@@ -452,33 +581,67 @@ extension AudioHelper: URLSessionDataDelegate {
         }
         
         print("Received audio chunk of size: \(data.count) bytes")
-        pushPlayerChunk(data)
+        if codecMode == .rawPCM{
+            pushPlayerChunk(data)
+        } else if codecMode == .opus {
+//            setupAudio()
+//            setupReceivingStream()
+//            opusPlayerNode.play()
+//            setupReceivingStream()
+//            readOpusPacketsFromStream()
+            sendDataToOpus(data)
+            
+//            // Write received data into our outputStream (Pipe)
+//            data.withUnsafeBytes { bufferPointer in
+//                guard let baseAddress = bufferPointer.baseAddress else { return }
+//                let bytes = baseAddress.assumingMemoryBound(to: UInt8.self)
+//                
+//                let written = outputStream?.write(bytes, maxLength: data.count) ?? 0
+//                if written < 0 {
+//                    print("❌ OutputStream write error: \(String(describing: outputStream?.streamError))")
+//                } else {
+//                    print("✅ Data written to Pipe (size: \(written) bytes)")
+//                }
+//            }
+        }
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
             if (error as NSError).code == NSURLErrorCancelled {
                 print("Task cancelled")
+                print("total data sent: \(task.countOfBytesSent)")
+                return
             } else {
                 print("Streaming error: \(error.localizedDescription)")
             }
         } else {
             print("Streaming completed - all data received")
+            print("total data received: \(task.countOfBytesReceived)")
+            print("Opus streams: output - \(opusOutputStream?.streamStatus.rawValue ) input - \(opusInputStream?.streamStatus.rawValue)")
+//            Thread.sleep(forTimeInterval: 10) // Sleeps for 2 seconds
+//            print("Waited for 2 seconds")
         }
         
-        // Don't immediately stop - wait for remaining buffers to complete
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.isPlaybackActive = false
-            
-            // Only stop immediately if no buffers are in flight
-            if self.buffersCounter <= 0 {
-                self.stopPlayback()
-                self.delegate?.playbackDone()
-            } else {
-                print("Waiting for \(self.buffersCounter) buffers to complete...")
-            }
-        }
+//        // Don't immediately stop - wait for remaining buffers to complete
+//        DispatchQueue.main.async { [weak self] in
+//            guard let self = self else { return }
+//            
+//            // Only stop immediately if no buffers are in flight
+//            if self.buffersCounter <= 0 && isPlaybackActive
+//                && task.originalRequest?.httpMethod == "GET" {
+//                if codecMode == .rawPCM {
+//                    self.stopPlayback()
+//                    self.delegate?.playbackDone()
+//                } else {
+//                    self.stopOpusPlayback()
+//                }
+//
+//            } else {
+//                print("POST session or Waiting for \(self.buffersCounter) buffers to complete...")
+//            }
+//        
+//        }
     }
 }
 
@@ -491,10 +654,10 @@ extension AudioHelper: URLSessionTaskDelegate {
         completionHandler(streamPipe.input)
     }
     
-    private func createStreamPipe() -> (input: InputStream, output: OutputStream) {
+    func createStreamPipe() -> (input: InputStream, output: OutputStream) {
         var inputStream: InputStream?
         var outputStream: OutputStream?
-        Stream.getBoundStreams(withBufferSize: 4096, inputStream: &inputStream, outputStream: &outputStream)
+        Stream.getBoundStreams(withBufferSize: 256000, inputStream: &inputStream, outputStream: &outputStream)
         return (inputStream!, outputStream!)
     }
     
@@ -506,9 +669,9 @@ extension AudioHelper: URLSessionTaskDelegate {
 // MARK: - SwiftUI ContentView
 struct ContentView: View {
     @StateObject private var audioHelper = AudioHelper.sharedInstance
-    @State private var broadcastID = "01JMMZZNT29ZXWRR2F2DRF9T5R"
+    @State private var broadcastID = "01JNMP7NDZXA534ETY6XKYGRC7"
     @State private var serverUrl = "https://ptt.steegler.com/broadcast"
-    @State private var authToken = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJ1c2VySWQiOiIwMUpNTVpDOEZYRzBLOU4wUzZWS1AyQkFOUSIsInVzZXJuYW1lIjoiTWF4IiwiZXhwIjoxNzQwOTYwMTIyfQ.Mv-kEj6NFSSf2DInZjmj59ir6oKVnzHZjp_ZLd6DD91Osf4cuMkOPaC7km-zc4t_BOo2ho1OhqMqwbto9y78kg"
+    @State private var authToken = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJ1c2VySWQiOiIwMUpNQzNQNjgxU0ZRV01GNU00N0UwVlRSNCIsInVzZXJuYW1lIjoibWUiLCJleHAiOjE3NDQ4MDAwODN9.jtPieOl4SUt8-9KF1q7nejdsOgwWRqkLgJiWCAKQdOc9TFLDCMejm9nreclgzPAEXXbwQ7q4TyB9oFgsxNoAkw"
     @State private var isStreaming = false
     @State private var isPlaying = false
     
@@ -526,6 +689,14 @@ struct ContentView: View {
             TextField("Authorization Token", text: $authToken)
                 .textFieldStyle(.roundedBorder)
                 .padding()
+            
+            Picker("Codec Mode", selection: $audioHelper.codecMode) {
+                ForEach(AudioHelper.CodecMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue.capitalized).tag(mode)
+                }
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding()
             
             Button(action: {
                 if isStreaming {

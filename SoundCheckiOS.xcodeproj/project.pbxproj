@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		383B07762D7942670020C9E1 /* Opus in Frameworks */ = {isa = PBXBuildFile; productRef = 383B07752D7942670020C9E1 /* Opus */; };
+		383B07782D79427F0020C9E1 /* Copus in Frameworks */ = {isa = PBXBuildFile; productRef = 383B07772D79427F0020C9E1 /* Copus */; };
+		383B077A2D79427F0020C9E1 /* Opus in Frameworks */ = {isa = PBXBuildFile; productRef = 383B07792D79427F0020C9E1 /* Opus */; };
+		386C1FA42D81529A009D9AFB /* Copus in Frameworks */ = {isa = PBXBuildFile; productRef = 386C1FA32D81529A009D9AFB /* Copus */; };
+		386C1FA62D81529A009D9AFB /* Opus in Frameworks */ = {isa = PBXBuildFile; productRef = 386C1FA52D81529A009D9AFB /* Opus */; };
+		386C1FA82D8153F0009D9AFB /* AudioHelper+Opus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386C1FA72D8153F0009D9AFB /* AudioHelper+Opus.swift */; };
+		386C1FAA2D815C11009D9AFB /* DataPipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386C1FA92D815C11009D9AFB /* DataPipe.swift */; };
 		38CF22092CE521E700C4593E /* SoundCheckiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38CF22082CE521E700C4593E /* SoundCheckiOSApp.swift */; };
 		38CF220B2CE521E700C4593E /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38CF220A2CE521E700C4593E /* ContentView.swift */; };
 		38CF220D2CE521E700C4593E /* Item.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38CF220C2CE521E700C4593E /* Item.swift */; };
@@ -36,6 +43,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		386C1FA72D8153F0009D9AFB /* AudioHelper+Opus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioHelper+Opus.swift"; sourceTree = "<group>"; };
+		386C1FA92D815C11009D9AFB /* DataPipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataPipe.swift; sourceTree = "<group>"; };
 		38CF22052CE521E700C4593E /* SoundCheckiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundCheckiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		38CF22082CE521E700C4593E /* SoundCheckiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundCheckiOSApp.swift; sourceTree = "<group>"; };
 		38CF220A2CE521E700C4593E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -56,6 +65,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				383B07762D7942670020C9E1 /* Opus in Frameworks */,
+				383B07782D79427F0020C9E1 /* Copus in Frameworks */,
+				383B077A2D79427F0020C9E1 /* Opus in Frameworks */,
+				386C1FA62D81529A009D9AFB /* Opus in Frameworks */,
+				386C1FA42D81529A009D9AFB /* Copus in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -103,6 +117,8 @@
 				38CF22362CE5258000C4593E /* Info.plist */,
 				38CF22082CE521E700C4593E /* SoundCheckiOSApp.swift */,
 				38CF220A2CE521E700C4593E /* ContentView.swift */,
+				386C1FA72D8153F0009D9AFB /* AudioHelper+Opus.swift */,
+				386C1FA92D815C11009D9AFB /* DataPipe.swift */,
 				38CF220C2CE521E700C4593E /* Item.swift */,
 				38CF220E2CE521E900C4593E /* Assets.xcassets */,
 				38CF22102CE521E900C4593E /* Preview Content */,
@@ -223,6 +239,9 @@
 				Base,
 			);
 			mainGroup = 38CF21FC2CE521E700C4593E;
+			packageReferences = (
+				383B07742D79422E0020C9E1 /* XCRemoteSwiftPackageReference "swift-opus" */,
+			);
 			productRefGroup = 38CF22062CE521E700C4593E /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -267,6 +286,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				38CF220B2CE521E700C4593E /* ContentView.swift in Sources */,
+				386C1FA82D8153F0009D9AFB /* AudioHelper+Opus.swift in Sources */,
+				386C1FAA2D815C11009D9AFB /* DataPipe.swift in Sources */,
 				38CF220D2CE521E700C4593E /* Item.swift in Sources */,
 				38CF22092CE521E700C4593E /* SoundCheckiOSApp.swift in Sources */,
 			);
@@ -432,7 +453,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"SoundCheckiOS/Preview Content\"";
-				DEVELOPMENT_TEAM = 2XVU2XVT3B;
+				DEVELOPMENT_TEAM = G4FX5726HD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SoundCheckiOS/Info.plist;
@@ -463,7 +484,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"SoundCheckiOS/Preview Content\"";
-				DEVELOPMENT_TEAM = 2XVU2XVT3B;
+				DEVELOPMENT_TEAM = G4FX5726HD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SoundCheckiOS/Info.plist;
@@ -598,6 +619,43 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		383B07742D79422E0020C9E1 /* XCRemoteSwiftPackageReference "swift-opus" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/alta/swift-opus";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.0.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		383B07752D7942670020C9E1 /* Opus */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 383B07742D79422E0020C9E1 /* XCRemoteSwiftPackageReference "swift-opus" */;
+			productName = Opus;
+		};
+		383B07772D79427F0020C9E1 /* Copus */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 383B07742D79422E0020C9E1 /* XCRemoteSwiftPackageReference "swift-opus" */;
+			productName = Copus;
+		};
+		383B07792D79427F0020C9E1 /* Opus */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 383B07742D79422E0020C9E1 /* XCRemoteSwiftPackageReference "swift-opus" */;
+			productName = Opus;
+		};
+		386C1FA32D81529A009D9AFB /* Copus */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Copus;
+		};
+		386C1FA52D81529A009D9AFB /* Opus */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Opus;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 38CF21FD2CE521E700C4593E /* Project object */;
 }
