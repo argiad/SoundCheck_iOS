@@ -671,7 +671,7 @@ struct ContentView: View {
     @StateObject private var audioHelper = AudioHelper.sharedInstance
     @State private var broadcastID = "01JNMP7NDZXA534ETY6XKYGRC7"
     @State private var serverUrl = "https://ptt.steegler.com/broadcast"
-    @State private var authToken = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJ1c2VySWQiOiIwMUpNQzNQNjgxU0ZRV01GNU00N0UwVlRSNCIsInVzZXJuYW1lIjoibWUiLCJleHAiOjE3NDQ4MDAwODN9.jtPieOl4SUt8-9KF1q7nejdsOgwWRqkLgJiWCAKQdOc9TFLDCMejm9nreclgzPAEXXbwQ7q4TyB9oFgsxNoAkw"
+    @State private var authToken = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJ1c2VySWQiOiIwMUpNQzNQNjgxU0ZRV01GNU00N0UwVlRSNCIsInVzZXJuYW1lIjoibWUiLCJleHAiOjE3NDUwMzg4MTd9.BNjp05v4BrwEmD7MGFfEDos-TNqgk9D7r_kimju0FRl_1ounqE2WIpj1DnF_aQ4R4teBk3nDPybwEkLK9iojcQ"
     @State private var isStreaming = false
     @State private var isPlaying = false
     
