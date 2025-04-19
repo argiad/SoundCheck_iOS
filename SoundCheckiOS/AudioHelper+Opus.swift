@@ -34,7 +34,7 @@ extension AudioHelper {
     // MARK: - Setup for Recording
     func setupRecording() {
         stopAudioSession() // Ensure clean session before reconfiguring
-
+        
         do {
             print("🎙 Setting up AVAudioSession for Recording...")
             opusSession = AVAudioSession.sharedInstance()
@@ -42,14 +42,14 @@ extension AudioHelper {
             try opusSession.setActive(true, options: .notifyOthersOnDeactivation)
             try opusSession.setPreferredInputNumberOfChannels(1)
             try opusSession.setPreferredOutputNumberOfChannels(1)
-
+            
             audioEngine = AVAudioEngine()
             inputNode = audioEngine.inputNode
-
+            
             let inputFormat = AVAudioFormat(standardFormatWithSampleRate: OPUS_ENCODER_SAMPLE_RATE, channels: 1)!
-
+            
             encoder = try Opus.Encoder(format: inputFormat, application: .voip)
-
+            
             audioEngine.prepare()
             try audioEngine.start()
             print("✅ Recording setup complete.")
@@ -57,7 +57,7 @@ extension AudioHelper {
             print("❌ Failed to setup recording: \(error.localizedDescription)")
         }
     }
-
+    
     // MARK: - Stop Recording
     func stopOpusRecording() {
         print("🛑 Stopping recording...")
@@ -70,26 +70,26 @@ extension AudioHelper {
             self?.delegate?.recordingStopped()
         }
     }
-
+    
     // MARK: - Setup for Playback
     func setupPlayback() {
         stopAudioSession() // Ensure clean session before reconfiguring
-
+        
         do {
             print("🔊 Setting up AVAudioSession for Playback...")
             opusSession = AVAudioSession.sharedInstance()
             try opusSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try opusSession.setActive(true, options: .notifyOthersOnDeactivation)
-
+            
             audioEngine = AVAudioEngine()
             opusPlayerNode = AVAudioPlayerNode()
             audioEngine.attach(opusPlayerNode)
-
+            
             let outputFormat = AVAudioFormat(standardFormatWithSampleRate: AUDIO_OUTPUT_SAMPLE_RATE, channels: AUDIO_OUTPUT_CHANNELS)!
             audioEngine.connect(opusPlayerNode, to: audioEngine.mainMixerNode, format: outputFormat)
-
+            
             decoder = try Opus.Decoder(format: outputFormat, application: .voip)
-
+            
             audioEngine.prepare()
             try audioEngine.start()
             print("✅ Playback setup complete.")
@@ -97,7 +97,7 @@ extension AudioHelper {
             print("❌ Failed to setup playback: \(error.localizedDescription)")
         }
     }
-
+    
     // MARK: - Stop Playback
     func stopOpusPlayback() {
         print("🛑 Stopping playback...")
@@ -113,7 +113,7 @@ extension AudioHelper {
             self?.delegate?.playbackDone()
         }
     }
-
+    
     // MARK: - Stop & Reset Audio Session
     private func stopAudioSession() {
         do {
@@ -128,7 +128,7 @@ extension AudioHelper {
     
     func startOpusRecording(serverUrl: String, authToken: String) {
         initiateNetworkWorker(serverUrl: serverUrl, authToken: authToken)
-
+        
         do {
             let inputFormat = AVAudioFormat(standardFormatWithSampleRate: OPUS_ENCODER_SAMPLE_RATE, channels: 1)!
             let desiredBufferSize = AVAudioFrameCount((Double(OPUS_ENCODER_DURATION_MS) / 1000.0) * OPUS_ENCODER_SAMPLE_RATE)
@@ -158,7 +158,6 @@ extension AudioHelper {
             self.opusBufferData.append(encodedData)
             self.sendAudioData (encodedData)
             print("buffer size before encode \(buffer.frameLength) and encoded: \(encodedData.count) 4 first elements: \(Data(encodedData.prefix(4)).base64EncodedString())")
-            //            print("total buffer size: \(self.opusBufferData.count)")
         } catch {
             print("Failed to encode buffer: \(error.localizedDescription)")
         }
@@ -192,26 +191,26 @@ extension AudioHelper {
     }
     
     private func scheduleBuffersForPlayback(_ buffers: [AVAudioPCMBuffer]) {
-            guard !buffers.isEmpty else {
-                print("buffers empty")
-               return
-            }
-            
-            for (index, buffer) in buffers.enumerated() {
-                print("debug data \(index)")
-                if index == buffers.count - 1 {
-                    // For the last buffer, use scheduleBuffer(completionHandler:)
-                    opusPlayerNode.scheduleBuffer(buffer) {
-                        DispatchQueue.main.async {
-                            self.opusBufferData.removeAll()
-                            self.delegate?.playbackDone()
-                        }
+        guard !buffers.isEmpty else {
+            print("buffers empty")
+            return
+        }
+        
+        for (index, buffer) in buffers.enumerated() {
+            print("debug data \(index)")
+            if index == buffers.count - 1 {
+                // For the last buffer, use scheduleBuffer(completionHandler:)
+                opusPlayerNode.scheduleBuffer(buffer) {
+                    DispatchQueue.main.async {
+                        self.opusBufferData.removeAll()
+                        self.delegate?.playbackDone()
                     }
-                } else {
-                    opusPlayerNode.scheduleBuffer(buffer)
                 }
+            } else {
+                opusPlayerNode.scheduleBuffer(buffer)
             }
         }
+    }
     
     
     // MARK: -- opus read from Stream
@@ -222,10 +221,10 @@ extension AudioHelper {
     
     private func setupReading(){
         cancellable = streamSubject
-             .sink { [weak self] packets in
-                 print("321312312")
-                 self?.processPackets(packets)
-             }
+            .sink { [weak self] packets in
+                print("321312312")
+                self?.processPackets(packets)
+            }
     }
     
     
@@ -233,7 +232,7 @@ extension AudioHelper {
         print("✅ readFromStream")
         readQueue.async {
             var readBuffer = [UInt8](repeating: 0, count: self.readBufferSize)
-
+            
             while true {
                 while mInputStream.hasBytesAvailable {
                     let bytesRead = mInputStream.read(&readBuffer, maxLength: self.readBufferSize)
@@ -247,12 +246,11 @@ extension AudioHelper {
             }
         }
     }
-
+    
     private func processPackets(_ packets: Data) {
         opusBuffer += packets
         var bytesRead = opusBuffer.count
         var buffer = Data()
-//        var readBuffer = [UInt8](repeating: 0, count: bytesRead)
         
         if bytesRead > 0 {
             
@@ -286,34 +284,34 @@ extension AudioHelper {
         }
     }
     
-
+    
     // MARK: - 🛠 Internal Helper Functions
-
-
+    
+    
     /// Extracts only the first Opus packet per attempt
     private func extractFirstOpusPacket(from buffer: inout Data, flush: Bool = false) {
         let headerBytes: [UInt8] = [0x7B, 0x85] // Opus Packet Start Header
-
+        
         // **Find first marker only**
         guard let start = findFirstPacketMarker(in: buffer, header: headerBytes) else {
             return
         }
-
+        
         // **Find the next marker (or use full buffer size if none found)**
         let end = findFirstPacketMarker(in: buffer.suffix(from: start + 2), header: headerBytes)
             .map { $0 + start + 2 } ?? 0
-
+        
         guard start < end, end <= buffer.count else {
             print("❌ Invalid packet range: \(start) - \(end)")
             return
         }
-
+        
         let packet = buffer[start..<end]
         buffer.removeSubrange(start..<end)
-
+        
         print("✅ Extracted Opus Packet (Size: \(packet.count) bytes), First 4 bytes: \(packet.prefix(4).base64EncodedString())")
         self.processReceivedAudioChunk(packet)
-
+        
         // **If flushing, process any remaining buffer data**
         if flush, !buffer.isEmpty {
             print("⚠️ Flushing last Opus packet (Size: \(buffer.count) bytes)")
@@ -321,13 +319,13 @@ extension AudioHelper {
             buffer.removeAll()
         }
     }
-
+    
     /// Finds the first Opus packet marker in the given buffer
     private func findFirstPacketMarker(in buffer: Data, header: [UInt8]) -> Int? {
         guard buffer.count >= 2 else {
             return nil // Not enough data for a valid Opus marker
         }
-
+        
         for i in 0..<(buffer.count - 2) { // ✅ Prevents out-of-bounds access
             print("i \(i) - \(buffer.base64EncodedString())")
             if buffer[i] == header[0], buffer[i + 1] == header[1] {
@@ -342,7 +340,7 @@ extension AudioHelper {
         guard let firstMarkerIndex = data.range(of: Data(marker))?.lowerBound else {
             return nil // No marker found
         }
-
+        
         let remainingData = data.suffix(from: firstMarkerIndex + marker.count)
         
         if let nextMarkerIndex = remainingData.range(of: Data(marker))?.lowerBound {
@@ -354,20 +352,14 @@ extension AudioHelper {
     
     
     private func processReceivedData(frame: Data) {
-//    private func processReceivedData(_ accumulatedData: inout Data, frameSizes: [Int]) {
-//        while let frameSize = frameSizes.first(where: { accumulatedData.count >= $0 }) {
-//            let frame = accumulatedData.prefix(frameSize)
-//            accumulatedData.removeFirst(frameSize)
-            
-            print("✅ Extracted Opus Frame (Size: \(frame.count) bytes), sending for decoding")
-
-            guard let pcmBuffer = try? decoder?.decode(frame) else {
-                print("❌ Opus decoding failed, skipping playback")
-                return
-            }
-
-            originalPlayer(buffer: pcmBuffer)
-//        }
+        print("✅ Extracted Opus Frame (Size: \(frame.count) bytes), sending for decoding")
+        
+        guard let pcmBuffer = try? decoder?.decode(frame) else {
+            print("❌ Opus decoding failed, skipping playback")
+            return
+        }
+        
+        originalPlayer(buffer: pcmBuffer)
     }
     
     private func processReceivedAudioChunk(_ chunk: Data) {
@@ -378,12 +370,8 @@ extension AudioHelper {
                 print("❌ Opus decoding failed, skipping playback")
                 return
             }
-
+            
             // Convert to AVAudioPCMBuffer
-//            guard let pcmBuffer = dataToAudioBuffer(data: decodedData) else {
-//                print("❌ Failed to convert PCM Data to Buffer")
-//                return
-//            }
             opusPlayer(buffer: pcmBuffer)
             print("data sent to opusPlayer")
         } else {
@@ -405,37 +393,11 @@ extension AudioHelper {
         let outputFormat = audioEngine.outputNode.outputFormat(forBus: 0)
         buffersCounter += 1
         print("Adding buffer #\(buffersCounter)  ")
-  
+        
         Task {
-//            guard let self = self else { return }
             self.opusPlayerNode.scheduleBuffer(buffer, completionCallbackType: .dataConsumed) { [weak self] _ in
-//                self?.buffersCounter -= 1
-//                print("Buffers left \(self?.buffersCounter ?? 0)")
                 self?.handleBufferCompletion()
             }
         }
-        
-//        DispatchQueue.global().async { [weak self] in
-//            guard let self = self else { return }
-//            self.opusPlayerNode.scheduleBuffer(buffer, completionCallbackType: .dataConsumed) { [weak self] _ in
-//                self?.buffersCounter -= 1
-//                print("Buffers left \(self?.buffersCounter ?? 0)")
-////                self?.handleBufferCompletion()
-//            }
-////            if buffer.format != outputFormat {
-////                guard let convertedBuffer = self.convertBuffer(buffer, to: outputFormat) else {
-////                    print("Failed to convert buffer format")
-////                    self.buffersCounter -= 1
-////                    return
-////                }
-////                self.opusPlayerNode.scheduleBuffer(convertedBuffer, completionCallbackType: .dataConsumed) { [weak self] _ in
-////                    self?.handleBufferCompletion()
-////                }
-////            } else {
-////                self.opusPlayerNode.scheduleBuffer(buffer, completionCallbackType: .dataConsumed) { [weak self] _ in
-////                    self?.handleBufferCompletion()
-////                }
-////            }
-//        }
     }
 }
